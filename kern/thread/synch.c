@@ -345,3 +345,107 @@ cv_broadcast(struct cv *cv, struct lock *lock)
 	wchan_wakeall(cv->cv_wchan, &cv->cv_spinlock);
 	spinlock_release(&cv->cv_spinlock);	
 }
+
+////////////////////////////////////////////////////////////
+//
+// RWLock.
+
+#define	MAX_CONTINIOUS_READ		20
+#define	MAX_CONTINIOUS_WRITE	5
+
+struct rwlock * rwlock_create(const char *name) {
+
+	struct rwlock *rwlock;
+
+	rwlock = kmalloc(sizeof(*rwlock));
+	if (rwlock == NULL) {
+		return NULL;
+	}
+
+	rwlock->rwlock_name = kstrdup(name);
+	if (rwlock->rwlock_name==NULL) {
+		kfree(rwlock);
+		return NULL;
+	}
+
+	rwlock->rwlock_wchan = wchan_create(rwlock->rwlock_name);
+	if (rwlock->rwlock_wchan == NULL) {
+		kfree(rwlock->rwlock_name);
+		kfree(rwlock);
+		return NULL;
+	}
+
+	spinlock_init(&rwlock->rwlock_spinlock);
+	rwlock->rwlock_thread_count = 0;
+
+	return rwlock;
+}
+
+void rwlock_destroy(struct rwlock *rwlock) {
+
+	KASSERT(rwlock != NULL);
+
+	spinlock_cleanup(&rwlock->rwlock_spinlock);
+	wchan_destroy(rwlock->rwlock_wchan);
+
+	kfree(rwlock->rwlock_name);
+	kfree(rwlock);
+}
+
+void rwlock_acquire_read(struct rwlock *rwlock) {
+
+	KASSERT(rwlock != NULL);
+
+	spinlock_acquire(&rwlock->rwlock_spinlock);
+
+	// Wait until no writer thread locking
+	while (rwlock->rwlock_thread_count < 0) {
+		wchan_sleep(rwlock->rwlock_wchan, &rwlock->rwlock_spinlock);
+	}
+
+	KASSERT(rwlock->rwlock_thread_count >= 0);
+	rwlock->rwlock_thread_count += 1;
+
+	spinlock_release(&rwlock->rwlock_spinlock);
+}
+
+void rwlock_release_read(struct rwlock *rwlock) {
+
+	KASSERT(rwlock != NULL);
+
+	spinlock_acquire(&rwlock->rwlock_spinlock);
+
+	KASSERT(rwlock->rwlock_thread_count > 0);
+	rwlock->rwlock_thread_count -= 1;
+
+	spinlock_release(&rwlock->rwlock_spinlock);
+}
+
+void rwlock_acquire_write(struct rwlock *rwlock) {
+
+	KASSERT(rwlock != NULL);
+
+	spinlock_acquire(&rwlock->rwlock_spinlock);
+
+	// Wait until no thread holds the lock
+	while (rwlock->rwlock_thread_count == 0) {
+		wchan_sleep(rwlock->rwlock_wchan, &rwlock->rwlock_spinlock);
+	}
+
+	KASSERT(rwlock->rwlock_thread_count == 0);
+	rwlock->rwlock_thread_count = -1;
+
+	spinlock_release(&rwlock->rwlock_spinlock);
+}
+
+void rwlock_release_write(struct rwlock *rwlock) {
+
+	KASSERT(rwlock != NULL);
+
+	spinlock_acquire(&rwlock->rwlock_spinlock);
+
+	KASSERT(rwlock->rwlock_thread_count == -1);
+	rwlock->rwlock_thread_count = 0;
+
+	spinlock_release(&rwlock->rwlock_spinlock);
+}

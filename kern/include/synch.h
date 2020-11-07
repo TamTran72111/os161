@@ -157,6 +157,9 @@ struct rwlock {
         char *rwlock_name;
         // add what you need here
         // (don't forget to mark things volatile as needed)
+        struct wchan *rwlock_wchan;
+        struct spinlock *rwlock_spinlock;
+        volatile int rwlock_thread_count;
 };
 
 struct rwlock * rwlock_create(const char *);
