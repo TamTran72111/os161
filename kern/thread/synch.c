@@ -224,7 +224,8 @@ lock_release(struct lock *lock)
 	// Write this
 
 	KASSERT(lock != NULL);
-
+	KASSERT(lock_do_i_hold(lock));
+	
 	spinlock_acquire(&lock->lk_spinlock);
 	
 	KASSERT(lock->lk_thread != NULL);
@@ -314,7 +315,7 @@ cv_wait(struct cv *cv, struct lock *lock)
 	wchan_sleep(cv->cv_wchan, &cv->cv_spinlock);
 
 	spinlock_release(&cv->cv_spinlock);
-	
+
 	lock_acquire(lock);
 
 }
