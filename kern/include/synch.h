@@ -158,7 +158,7 @@ struct rwlock {
         // add what you need here
         // (don't forget to mark things volatile as needed)
         struct wchan *rwlock_wchan;
-        struct spinlock *rwlock_spinlock;
+        struct spinlock rwlock_spinlock;
         volatile int rwlock_thread_count;
 };
 
