@@ -69,12 +69,27 @@
 #include <test.h>
 #include <synch.h>
 
+#define NUM_QUADRANTS 4
+
+struct lock *light_lock;
+struct cv *light_cvs[NUM_QUADRANTS];
+volatile bool light_quadrant[NUM_QUADRANTS];
+
 /*
  * Called by the driver during initialization.
  */
 
 void
 stoplight_init() {
+
+	light_lock = lock_create("light lock");
+	light_cvs[0] = cv_create("light 0 cv");
+	light_cvs[1] = cv_create("light 1 cv");
+	light_cvs[2] = cv_create("light 2 cv");
+	light_cvs[3] = cv_create("light 3 cv");
+	light_quadrant[0] = light_quadrant[1] = false;
+	light_quadrant[2] = light_quadrant[3] = false;
+
 	return;
 }
 
@@ -83,36 +98,133 @@ stoplight_init() {
  */
 
 void stoplight_cleanup() {
+
+	lock_destroy(light_lock);
+	cv_destroy(light_cvs[0]);
+	cv_destroy(light_cvs[1]);
+	cv_destroy(light_cvs[2]);
+	cv_destroy(light_cvs[3]);
+
 	return;
 }
 
 void
 turnright(uint32_t direction, uint32_t index)
 {
-	(void)direction;
-	(void)index;
 	/*
 	 * Implement this function.
 	 */
+
+	lock_acquire(light_lock);
+	while (light_quadrant[direction]) {
+		cv_wait(light_cvs[direction], light_lock);
+	}
+	KASSERT(!light_quadrant[direction]);
+	light_quadrant[direction] = true;
+	lock_release(light_lock);
+
+	inQuadrant(direction, index);
+	leaveIntersection(index);
+	
+	lock_acquire(light_lock);
+	KASSERT(light_quadrant[direction]);
+	light_quadrant[direction] = false;
+	cv_signal(light_cvs[direction], light_lock);
+	lock_release(light_lock);
+
 	return;
 }
 void
 gostraight(uint32_t direction, uint32_t index)
 {
-	(void)direction;
-	(void)index;
 	/*
 	 * Implement this function.
 	 */
+	uint32_t start_quadrant = direction;
+	uint32_t end_quadrant = (direction + 3) % NUM_QUADRANTS;
+
+	lock_acquire(light_lock);
+	while (light_quadrant[start_quadrant] || light_quadrant[end_quadrant]) {
+		if (light_quadrant[start_quadrant]) {
+			cv_wait(light_cvs[start_quadrant], light_lock);
+		}
+		if (light_quadrant[end_quadrant]) {
+			cv_wait(light_cvs[end_quadrant], light_lock);
+		}
+	}
+
+	KASSERT(!light_quadrant[start_quadrant]);
+	KASSERT(!light_quadrant[end_quadrant]);
+	light_quadrant[start_quadrant] = true;
+	light_quadrant[end_quadrant] = true;
+	lock_release(light_lock);
+
+
+	inQuadrant(start_quadrant, index);
+	inQuadrant(end_quadrant, index);
+	leaveIntersection(index);
+
+	lock_acquire(light_lock);
+	KASSERT(light_quadrant[start_quadrant]);
+	KASSERT(light_quadrant[end_quadrant]);
+	light_quadrant[start_quadrant] = false;
+	light_quadrant[end_quadrant] = false;
+	cv_signal(light_cvs[start_quadrant], light_lock);
+	cv_signal(light_cvs[end_quadrant], light_lock);
+	lock_release(light_lock);
+
 	return;
 }
 void
 turnleft(uint32_t direction, uint32_t index)
 {
-	(void)direction;
-	(void)index;
 	/*
 	 * Implement this function.
 	 */
+
+	uint32_t start_quadrant = direction;
+	uint32_t intermediate_quadrant = (direction + 3) % NUM_QUADRANTS;
+	uint32_t end_quadrant = (direction + 2) % NUM_QUADRANTS;
+
+	lock_acquire(light_lock);
+	while (light_quadrant[start_quadrant] || light_quadrant[intermediate_quadrant] || light_quadrant[end_quadrant]) {
+		if (light_quadrant[start_quadrant]) {
+			cv_wait(light_cvs[start_quadrant], light_lock);
+		}
+		if (light_quadrant[intermediate_quadrant]) {
+			cv_wait(light_cvs[intermediate_quadrant], light_lock);
+		}
+		if (light_quadrant[end_quadrant]) {
+			cv_wait(light_cvs[end_quadrant], light_lock);
+		}
+	}
+	
+	KASSERT(!light_quadrant[start_quadrant]);
+	KASSERT(!light_quadrant[intermediate_quadrant]);
+	KASSERT(!light_quadrant[end_quadrant]);
+	light_quadrant[start_quadrant] = true;
+	light_quadrant[intermediate_quadrant] = true;
+	light_quadrant[end_quadrant] = true;
+	lock_release(light_lock);
+
+
+	inQuadrant(start_quadrant, index);
+	inQuadrant(intermediate_quadrant, index);
+	inQuadrant(end_quadrant, index);
+	leaveIntersection(index);
+
+	lock_acquire(light_lock);
+	KASSERT(light_quadrant[start_quadrant]);
+	KASSERT(light_quadrant[intermediate_quadrant]);
+	KASSERT(light_quadrant[end_quadrant]);
+	light_quadrant[start_quadrant] = false;
+	light_quadrant[intermediate_quadrant] = false;
+	light_quadrant[end_quadrant] = false;
+	cv_signal(light_cvs[start_quadrant], light_lock);
+	cv_signal(light_cvs[intermediate_quadrant], light_lock);
+	cv_signal(light_cvs[end_quadrant], light_lock);
+	lock_release(light_lock);
+
+	
 	return;
 }
